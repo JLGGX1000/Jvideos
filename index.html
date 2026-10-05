@@ -1568,19 +1568,76 @@ button{
 }
 
 /* =========================================================
+   SEGUIR / SEGUINDO
+========================================================= */
+
+.follow-button{
+    margin-top:18px;
+    min-width:150px;
+    padding:11px 20px;
+    border-radius:10px;
+    background:var(--blue);
+    color:#fff;
+    font-weight:700;
+}
+
+.follow-button.following{
+    background:#222;
+    border:1px solid #3a3a3a;
+}
+
+.following-page{
+    width:100%;
+    height:100%;
+    overflow-y:auto;
+    padding:20px 15px 30px;
+}
+
+.following-container{
+    max-width:750px;
+    margin:auto;
+}
+
+.following-header{
+    font-size:26px;
+    font-weight:800;
+    margin-bottom:18px;
+}
+
+.following-empty{
+    text-align:center;
+    color:#777;
+    padding:55px 20px;
+    line-height:1.5;
+}
+
+.comment-delete{
+    margin-top:7px;
+    padding:4px 8px;
+    border-radius:7px;
+    background:transparent;
+    color:#ff6670;
+    font-size:11px;
+    border:1px solid #3a2224;
+}
+
+.share-button{
+    background:rgba(0,0,0,.5);
+}
+
+/* =========================================================
    CELULAR
 ========================================================= */
 
 @media(max-width:600px){
 
     .bottom-nav{
-        gap:5px;
+        gap:2px;
     }
 
     .nav-btn{
-        min-width:80px;
-
-        padding:5px 10px;
+        min-width:68px;
+        padding:5px 7px;
     }
 
     .video-actions{
@@ -2125,6 +2182,27 @@ acrescentem valor aos espectadores são recomendados.
 
 
 <!-- =====================================================
+     SEGUINDO
+===================================================== -->
+
+<section
+    id="followingScreen"
+    class="screen"
+>
+    <div class="following-page">
+        <div class="following-container">
+            <div class="following-header">Seguindo</div>
+            <div
+                id="followingFeed"
+                class="feed"
+                style="height:auto;overflow-y:visible;scroll-snap-type:none;"
+            ></div>
+        </div>
+    </div>
+</section>
+
+
+<!-- =====================================================
      PERFIL
 ===================================================== -->
 
@@ -2525,6 +2603,15 @@ Seguidores
 
 </div>
 
+<button
+    id="publicFollowButton"
+    class="follow-button"
+    type="button"
+    onclick="togglePublicFollow()"
+>
+Seguir
+</button>
+
 
 <div class="profile-section-title">
 Vídeos
@@ -2581,6 +2668,20 @@ Início
 Publicar
 </div>
 
+</button>
+
+
+<button
+    id="navFollowing"
+    class="nav-btn"
+    onclick="openFollowing()"
+>
+<div class="nav-icon">
+♡
+</div>
+<div class="nav-text">
+Seguindo
+</div>
 </button>
 
 
@@ -2912,8 +3013,11 @@ let activeChannelVideo = null;
 let activeChannelProfile = null;
 
 let activeCommentVideoId = null;
+let activePublicProfileId = null;
 
 let viewedVideos = new Set();
+let viewedIpCache = null;
+let viewIpPromise = null;
 
 let audioUnlocked = false;
 
@@ -3188,6 +3292,13 @@ function showScreen(id){
             .getElementById("navProfile")
             .classList.add("active");
     }
+
+    if(id === "followingScreen"){
+
+        document
+            .getElementById("navFollowing")
+            .classList.add("active");
+    }
 }
 
 
@@ -3231,10 +3342,12 @@ function resetAllFeedVideos(){
 let lastVisibleVideo = null;
 
 
-function setupVideoObserver(){
+function setupVideoObserver(
+    root = document
+){
 
     const cards =
-        document.querySelectorAll(
+        root.querySelectorAll(
             ".video-card"
         );
 
@@ -3286,31 +3399,12 @@ function setupVideoObserver(){
                           Tenta áudio.
                         */
 
-                        video.muted =
-                            false;
-
-                        video.volume =
-                            1;
+                        video.muted = true;
+                        video.volume = 1;
+                        video.dataset.autoplayMuted = "true";
 
                         video.play()
-                            .then(()=>{
-
-                                video.dataset.autoplayMuted =
-                                    "false";
-
-                            })
-                            .catch(()=>{
-
-                                video.muted =
-                                    true;
-
-                                video.dataset.autoplayMuted =
-                                    "true";
-
-                                video.play()
-                                    .catch(()=>{});
-
-                            });
+                            .catch(()=>{});
 
 
                         registerView(
@@ -3460,640 +3554,265 @@ function renderFeed(){
 
 function createVideoCard(video){
 
-    const card =
-        document.createElement(
-            "article"
-        );
+    const card = document.createElement("article");
+    card.className = "video-card";
+    card.dataset.videoId = video.id;
 
-    card.className =
-        "video-card";
+    const stage = document.createElement("div");
+    stage.className = "video-stage";
 
-    card.dataset.videoId =
-        video.id;
+    const videoElement = document.createElement("video");
+    videoElement.className = "video-element";
+    videoElement.src = getVideoUrl(video.video_url);
+    videoElement.playsInline = true;
+    videoElement.preload = "metadata";
+    videoElement.loop = true;
 
-
-    /*
-      ÁREA VERTICAL
-    */
-
-    const stage =
-        document.createElement(
-            "div"
-        );
-
-    stage.className =
-        "video-stage";
-
-
-    /*
-      VIDEO
-    */
-
-    const videoElement =
-        document.createElement(
-            "video"
-        );
-
-    videoElement.className =
-        "video-element";
-
-    videoElement.src =
-        getVideoUrl(
-            video.video_url
-        );
-
-    videoElement.playsInline =
-        true;
-
-    videoElement.preload =
-        "metadata";
-
-    videoElement.loop =
-        true;
-
-    videoElement.muted =
-        false;
-
-    videoElement.volume =
-        1;
+    // Autoplay com áudio pode ser bloqueado pelo navegador.
+    videoElement.muted = true;
+    videoElement.volume = 1;
 
     if(video.thumbnail_url){
-
-        videoElement.poster =
-            getThumbnailUrl(
-                video.thumbnail_url
-            );
+        videoElement.poster = getThumbnailUrl(video.thumbnail_url);
     }
 
+    const gradient = document.createElement("div");
+    gradient.className = "video-gradient";
 
-    /*
-      GRADIENTE
-    */
+    const pause = document.createElement("div");
+    pause.className = "pause-animation";
+    pause.textContent = "▶";
 
-    const gradient =
-        document.createElement(
-            "div"
-        );
+    const soundBox = document.createElement("div");
+    soundBox.className = "sound-box";
 
-    gradient.className =
-        "video-gradient";
+    const soundButton = document.createElement("button");
+    soundButton.className = "sound-btn";
+    soundButton.type = "button";
+    soundButton.textContent = "🔇";
 
+    const volume = document.createElement("input");
+    volume.className = "volume-slider";
+    volume.type = "range";
+    volume.min = "0";
+    volume.max = "1";
+    volume.step = "0.01";
+    volume.value = "1";
 
-    /*
-      PAUSE
-    */
+    soundButton.addEventListener("click", e=>{
+        e.stopPropagation();
+        audioUnlocked = true;
+        videoElement.muted = !videoElement.muted;
 
-    const pause =
-        document.createElement(
-            "div"
-        );
-
-    pause.className =
-        "pause-animation";
-
-    pause.textContent =
-        "▶";
-
-
-    /*
-      SOM
-    */
-
-    const soundBox =
-        document.createElement(
-            "div"
-        );
-
-    soundBox.className =
-        "sound-box";
-
-
-    const soundButton =
-        document.createElement(
-            "button"
-        );
-
-    soundButton.className =
-        "sound-btn";
-
-    soundButton.textContent =
-        "🔊";
-
-
-    const volume =
-        document.createElement(
-            "input"
-        );
-
-    volume.className =
-        "volume-slider";
-
-    volume.type =
-        "range";
-
-    volume.min =
-        "0";
-
-    volume.max =
-        "1";
-
-    volume.step =
-        "0.01";
-
-    volume.value =
-        "1";
-
-
-    soundButton.addEventListener(
-        "click",
-        e=>{
-
-            e.stopPropagation();
-
-            videoElement.muted =
-                !videoElement.muted;
-
-            if(!videoElement.muted){
-
-                videoElement.volume =
-                    Number(
-                        volume.value || 1
-                    );
-
-                videoElement.play()
-                    .catch(()=>{});
-
-            }
-
-            soundButton.textContent =
-                videoElement.muted
-                    ? "🔇"
-                    : "🔊";
+        if(!videoElement.muted){
+            videoElement.volume = Number(volume.value || 1);
+            videoElement.play().catch(()=>{});
         }
-    );
 
+        soundButton.textContent =
+            videoElement.muted ? "🔇" : "🔊";
+    });
 
-    volume.addEventListener(
-        "click",
-        e=>{
-            e.stopPropagation();
+    volume.addEventListener("click", e=>e.stopPropagation());
+
+    volume.addEventListener("input", e=>{
+        e.stopPropagation();
+        audioUnlocked = true;
+
+        const value = Number(e.target.value);
+        videoElement.volume = value;
+
+        if(value > 0){
+            videoElement.muted = false;
+            soundButton.textContent = "🔊";
+            videoElement.play().catch(()=>{});
+        }else{
+            videoElement.muted = true;
+            soundButton.textContent = "🔇";
         }
+    });
+
+    soundBox.appendChild(soundButton);
+    soundBox.appendChild(volume);
+
+    const info = document.createElement("div");
+    info.className = "video-info";
+
+    const channelLink = document.createElement("div");
+    channelLink.className = "channel-link";
+
+    const avatar = document.createElement("img");
+    avatar.className = "video-channel-avatar";
+    avatar.src = getAvatarUrl(
+        video.profile?.avatar_url,
+        video.profile?.display_name
     );
 
-
-    volume.addEventListener(
-        "input",
-        e=>{
-
-            e.stopPropagation();
-
-            const value =
-                Number(
-                    e.target.value
-                );
-
-            videoElement.volume =
-                value;
-
-            if(value > 0){
-
-                videoElement.muted =
-                    false;
-
-                soundButton.textContent =
-                    "🔊";
-
-                videoElement.play()
-                    .catch(()=>{});
-
-            }else{
-
-                videoElement.muted =
-                    true;
-
-                soundButton.textContent =
-                    "🔇";
-            }
-        }
-    );
-
-
-    soundBox.appendChild(
-        soundButton
-    );
-
-    soundBox.appendChild(
-        volume
-    );
-
-
-    /*
-      INFORMAÇÕES
-    */
-
-    const info =
-        document.createElement(
-            "div"
-        );
-
-    info.className =
-        "video-info";
-
-
-    const channelLink =
-        document.createElement(
-            "div"
-        );
-
-    channelLink.className =
-        "channel-link";
-
-
-    const avatar =
-        document.createElement(
-            "img"
-        );
-
-    avatar.className =
-        "video-channel-avatar";
-
-    avatar.src =
-        getAvatarUrl(
-            video.profile?.avatar_url,
-            video.profile?.display_name
-        );
-
-
-    const channelName =
-        document.createElement(
-            "div"
-        );
-
-    channelName.className =
-        "video-channel-name";
-
+    const channelName = document.createElement("div");
+    channelName.className = "video-channel-name";
     channelName.textContent =
-        video.profile?.display_name ||
-        "Usuário";
+        video.profile?.display_name || "Usuário";
 
+    channelLink.appendChild(avatar);
+    channelLink.appendChild(channelName);
 
-    channelLink.appendChild(
-        avatar
-    );
+    channelLink.addEventListener("click", e=>{
+        e.stopPropagation();
+        openPublicProfile(video.user_id);
+    });
 
-    channelLink.appendChild(
-        channelName
-    );
+    const title = document.createElement("div");
+    title.className = "video-title";
+    title.textContent = video.title || "Sem título";
 
+    info.appendChild(channelLink);
+    info.appendChild(title);
 
-    channelLink.addEventListener(
-        "click",
-        e=>{
+    const actions = document.createElement("div");
+    actions.className = "video-actions";
 
-            e.stopPropagation();
+    const likeGroup = document.createElement("div");
+    likeGroup.className = "action-group";
 
-            openPublicProfile(
-                video.user_id
-            );
-        }
-    );
+    const likeButton = document.createElement("button");
+    likeButton.className = "action-btn like";
+    likeButton.innerHTML = "♡";
 
+    const likeCount = document.createElement("span");
+    likeCount.className = "action-count";
+    likeCount.textContent = formatNumber(video.likes_count);
 
-    const title =
-        document.createElement(
-            "div"
-        );
+    likeButton.addEventListener("click", async e=>{
+        e.stopPropagation();
+        await toggleLike(video, likeButton, likeCount);
+    });
 
-    title.className =
-        "video-title";
+    likeGroup.appendChild(likeButton);
+    likeGroup.appendChild(likeCount);
 
-    title.textContent =
-        video.title ||
-        "Sem título";
+    const commentGroup = document.createElement("div");
+    commentGroup.className = "action-group";
 
+    const commentButton = document.createElement("button");
+    commentButton.className = "action-btn";
+    commentButton.innerHTML = "💬";
 
-    info.appendChild(
-        channelLink
-    );
+    const commentCount = document.createElement("span");
+    commentCount.className = "action-count";
+    commentCount.textContent = formatNumber(video.comments_count);
 
-    info.appendChild(
-        title
-    );
+    commentButton.addEventListener("click", e=>{
+        e.stopPropagation();
+        openComments(video.id);
+    });
 
+    commentGroup.appendChild(commentButton);
+    commentGroup.appendChild(commentCount);
 
-    /*
-      AÇÕES
-    */
+    const viewGroup = document.createElement("div");
+    viewGroup.className = "action-group";
 
-    const actions =
-        document.createElement(
-            "div"
-        );
+    const viewButton = document.createElement("div");
+    viewButton.className = "action-btn";
+    viewButton.style.cursor = "default";
+    viewButton.textContent = "👁";
 
-    actions.className =
-        "video-actions";
+    const viewCount = document.createElement("span");
+    viewCount.className = "action-count";
+    viewCount.dataset.viewCount = video.id;
+    viewCount.textContent = formatNumber(video.views);
 
+    viewGroup.appendChild(viewButton);
+    viewGroup.appendChild(viewCount);
 
-    /*
-      LIKE
-    */
+    // Compartilhar fica logo acima dos três pontinhos.
+    const shareGroup = document.createElement("div");
+    shareGroup.className = "action-group";
 
-    const likeGroup =
-        document.createElement(
-            "div"
-        );
+    const shareButton = document.createElement("button");
+    shareButton.className = "action-btn share-button";
+    shareButton.type = "button";
+    shareButton.textContent = "↗";
+    shareButton.setAttribute("aria-label","Compartilhar vídeo");
 
-    likeGroup.className =
-        "action-group";
+    shareButton.addEventListener("click", e=>{
+        e.stopPropagation();
+        shareVideo(video);
+    });
 
+    shareGroup.appendChild(shareButton);
 
-    const likeButton =
-        document.createElement(
-            "button"
-        );
-
-    likeButton.className =
-        "action-btn like";
-
-    likeButton.innerHTML =
-        "♡";
-
-
-    const likeCount =
-        document.createElement(
-            "span"
-        );
-
-    likeCount.className =
-        "action-count";
-
-    likeCount.textContent =
-        formatNumber(
-            video.likes_count
-        );
-
-
-    likeButton.addEventListener(
-        "click",
-        async e=>{
-
-            e.stopPropagation();
-
-            await toggleLike(
-                video,
-                likeButton,
-                likeCount
-            );
-        }
-    );
-
-
-    likeGroup.appendChild(
-        likeButton
-    );
-
-    likeGroup.appendChild(
-        likeCount
-    );
-
-
-    /*
-      COMENTÁRIOS
-    */
-
-    const commentGroup =
-        document.createElement(
-            "div"
-        );
-
-    commentGroup.className =
-        "action-group";
-
-
-    const commentButton =
-        document.createElement(
-            "button"
-        );
-
-    commentButton.className =
-        "action-btn";
-
-    commentButton.innerHTML =
-        "💬";
-
-
-    const commentCount =
-        document.createElement(
-            "span"
-        );
-
-    commentCount.className =
-        "action-count";
-
-    commentCount.textContent =
-        formatNumber(
-            video.comments_count
-        );
-
-
-    commentButton.addEventListener(
-        "click",
-        e=>{
-
-            e.stopPropagation();
-
-            openComments(
-                video.id
-            );
-        }
-    );
-
-
-    commentGroup.appendChild(
-        commentButton
-    );
-
-    commentGroup.appendChild(
-        commentCount
-    );
-
-
-    /*
-      VISUALIZAÇÕES
-    */
-
-    const viewGroup =
-        document.createElement(
-            "div"
-        );
-
-    viewGroup.className =
-        "action-group";
-
-
-    const viewButton =
-        document.createElement(
-            "div"
-        );
-
-    viewButton.className =
-        "action-btn";
-
-    viewButton.style.cursor =
-        "default";
-
-    viewButton.textContent =
-        "👁";
-
-
-    const viewCount =
-        document.createElement(
-            "span"
-        );
-
-    viewCount.className =
-        "action-count";
-
-    viewCount.dataset.viewCount =
-        video.id;
-
-    viewCount.textContent =
-        formatNumber(
-            video.views
-        );
-
-
-    viewGroup.appendChild(
-        viewButton
-    );
-
-    viewGroup.appendChild(
-        viewCount
-    );
-
-
-    actions.appendChild(
-        likeGroup
-    );
-
-    actions.appendChild(
-        commentGroup
-    );
-
-    actions.appendChild(
-        viewGroup
-    );
-
-
-    /*
-      MENU DE OPÇÕES: descrição e exclusão pelo dono.
-    */
     const optionsGroup = document.createElement("div");
     optionsGroup.className = "action-group";
+
     const optionsButton = document.createElement("button");
     optionsButton.className = "action-btn";
     optionsButton.type = "button";
     optionsButton.textContent = "⋯";
-    optionsButton.setAttribute("aria-label", "Opções do vídeo");
-    optionsButton.addEventListener("click", e => {
+    optionsButton.setAttribute("aria-label","Opções do vídeo");
+
+    optionsButton.addEventListener("click", e=>{
         e.stopPropagation();
         openVideoOptions(video);
     });
+
     optionsGroup.appendChild(optionsButton);
+
+    actions.appendChild(likeGroup);
+    actions.appendChild(commentGroup);
+    actions.appendChild(viewGroup);
+    actions.appendChild(shareGroup);
     actions.appendChild(optionsGroup);
 
-    /*
-      MONTA STAGE
-    */
+    stage.appendChild(videoElement);
+    stage.appendChild(gradient);
+    stage.appendChild(pause);
+    stage.appendChild(soundBox);
+    stage.appendChild(info);
 
-    stage.appendChild(
-        videoElement
-    );
+    card.appendChild(stage);
+    card.appendChild(actions);
 
-    stage.appendChild(
-        gradient
-    );
+    stage.addEventListener("click", e=>{
 
-    stage.appendChild(
-        pause
-    );
-
-    stage.appendChild(
-        soundBox
-    );
-
-    stage.appendChild(
-        info
-    );
-
-    card.appendChild(
-        stage
-    );
-
-    card.appendChild(
-        actions
-    );
-
-
-    /*
-      CLICK CENTRAL:
-      PLAY / PAUSE
-    */
-
-    stage.addEventListener(
-        "click",
-        e=>{
-
-            if(
-                e.target.closest("button") ||
-                e.target.closest("input") ||
-                e.target.closest(".channel-link")
-            ){
-
-                return;
-            }
-
-
-            if(videoElement.paused){
-
-                videoElement.play()
-                    .catch(()=>{});
-
-                showPauseAnimation(
-                    pause,
-                    "▶"
-                );
-
-            }else{
-
-                videoElement.pause();
-
-                showPauseAnimation(
-                    pause,
-                    "Ⅱ"
-                );
-            }
+        if(
+            e.target.closest("button") ||
+            e.target.closest("input") ||
+            e.target.closest(".channel-link")
+        ){
+            return;
         }
-    );
 
+        audioUnlocked = true;
 
-    /*
-      Atualiza ícone quando o player
-      estiver tocando.
-    */
+        if(videoElement.paused){
 
-    videoElement.addEventListener(
-        "play",
-        ()=>{
-            pause.textContent =
-                "▶";
+            videoElement.muted = false;
+            videoElement.volume = Number(volume.value || 1);
+
+            videoElement.play().catch(()=>{
+                videoElement.muted = true;
+                videoElement.play().catch(()=>{});
+            });
+
+            soundButton.textContent =
+                videoElement.muted ? "🔇" : "🔊";
+
+            showPauseAnimation(pause,"▶");
+
+        }else{
+
+            videoElement.pause();
+            showPauseAnimation(pause,"Ⅱ");
         }
-    );
+    });
 
+    videoElement.addEventListener("play",()=>{
+        pause.textContent = "▶";
+    });
 
     return card;
 }
-
 
 /* =========================================================
    PAUSA
@@ -4123,49 +3842,46 @@ function showPauseAnimation(
    ÁUDIO
 ========================================================= */
 
+function unlockFeedAudio(){
+
+    if(audioUnlocked){
+        return;
+    }
+
+    audioUnlocked = true;
+
+    const active = lastVisibleVideo;
+
+    if(active){
+
+        active.muted = false;
+        active.volume = 1;
+
+        active.play().catch(()=>{
+            active.muted = true;
+        });
+
+        const button =
+            active.closest(".video-card")
+            ?.querySelector(".sound-btn");
+
+        if(button){
+            button.textContent =
+                active.muted ? "🔇" : "🔊";
+        }
+    }
+}
+
 document.addEventListener(
     "pointerdown",
-    ()=>{
+    unlockFeedAudio,
+    {passive:true}
+);
 
-        if(audioUnlocked){
-            return;
-        }
-
-        audioUnlocked =
-            true;
-
-
-        document
-            .querySelectorAll(
-                ".video-card video"
-            )
-            .forEach(video=>{
-
-                if(
-                    video.dataset.autoplayMuted ===
-                    "true"
-                ){
-
-                    video.muted =
-                        false;
-
-                    video.volume =
-                        1;
-
-                    video.play()
-                        .then(()=>{
-                            video.dataset.autoplayMuted =
-                                "false";
-                        })
-                        .catch(()=>{});
-                }
-
-            });
-
-    },
-    {
-        passive:true
-    }
+document.addEventListener(
+    "keydown",
+    unlockFeedAudio,
+    {passive:true}
 );
 
 
@@ -4173,22 +3889,72 @@ document.addEventListener(
    VISUALIZAÇÃO
 ========================================================= */
 
-async function registerView(
-    videoId
-){
+/*
+  O HTML não consegue descobrir o IP público sozinho.
+  Usamos um serviço público de IP e guardamos a combinação
+  IP + vídeo no navegador para impedir novas contagens.
+*/
+async function getViewerIp(){
 
-    if(
-        viewedVideos.has(
-            videoId
+    if(viewedIpCache){
+        return viewedIpCache;
+    }
+
+    if(viewIpPromise){
+        return viewIpPromise;
+    }
+
+    viewIpPromise =
+        fetch(
+            "https://api.ipify.org?format=json",
+            {cache:"no-store"}
         )
-    ){
+        .then(response=>{
+            if(!response.ok){
+                throw new Error("Falha ao obter IP.");
+            }
+            return response.json();
+        })
+        .then(data=>{
+            viewedIpCache =
+                data.ip || null;
+
+            return viewedIpCache;
+        })
+        .catch(error=>{
+            console.error("IP:",error);
+            return null;
+        });
+
+    return viewIpPromise;
+}
+
+async function registerView(videoId){
+
+    if(viewedVideos.has(videoId)){
         return;
     }
 
-    viewedVideos.add(
-        videoId
-    );
+    const ip =
+        await getViewerIp();
 
+    if(!ip){
+        return;
+    }
+
+    const storageKey =
+        "jvideos_view_" +
+        ip +
+        "_" +
+        String(videoId);
+
+    if(localStorage.getItem(storageKey)){
+
+        viewedVideos.add(videoId);
+        return;
+    }
+
+    viewedVideos.add(videoId);
 
     const {
         data,
@@ -4198,56 +3964,45 @@ async function registerView(
         .rpc(
             "register_video_view",
             {
-                p_video_id:
-                    videoId
+                p_video_id: videoId
             }
         );
 
-
     if(error){
 
-        console.error(
-            error
-        );
+        console.error(error);
 
+        viewedVideos.delete(videoId);
         return;
     }
 
-
     if(data === true){
+
+        localStorage.setItem(
+            storageKey,
+            "1"
+        );
 
         const counter =
             document.querySelector(
                 `[data-view-count="${videoId}"]`
             );
 
-
         const video =
             feedVideos.find(
-                item =>
-                    item.id === videoId
+                item => item.id === videoId
             );
 
-
-        if(
-            counter &&
-            video
-        ){
+        if(counter && video){
 
             video.views =
-                Number(
-                    video.views || 0
-                ) + 1;
+                Number(video.views || 0) + 1;
 
             counter.textContent =
-                formatNumber(
-                    video.views
-                );
+                formatNumber(video.views);
         }
-
     }
 }
-
 
 /* =========================================================
    CURTIDAS
@@ -4492,6 +4247,30 @@ async function loadComments(
     `;
 
 
+    let commentVideoOwnerId = null;
+
+    const cachedVideo =
+        [...feedVideos,...channelVideos,...publicChannelVideos]
+        .find(item => String(item.id) === String(videoId));
+
+    if(cachedVideo){
+
+        commentVideoOwnerId =
+            cachedVideo.user_id;
+
+    }else{
+
+        const {data:videoOwner} =
+            await supabaseClient
+            .from("videos")
+            .select("user_id")
+            .eq("id",videoId)
+            .maybeSingle();
+
+        commentVideoOwnerId =
+            videoOwner?.user_id || null;
+    }
+
     const {
         data,
         error
@@ -4634,6 +4413,42 @@ async function loadComments(
                 text
             );
 
+            const canDeleteComment =
+                !!currentUser &&
+                (
+                    currentUser.id === comment.user_id ||
+                    currentUser.id === commentVideoOwnerId
+                );
+
+            if(canDeleteComment){
+
+                const deleteButton =
+                    document.createElement("button");
+
+                deleteButton.className =
+                    "comment-delete";
+
+                deleteButton.type = "button";
+                deleteButton.textContent = "Excluir";
+
+                deleteButton.addEventListener(
+                    "click",
+                    async e=>{
+                        e.stopPropagation();
+
+                        await deleteComment(
+                            comment,
+                            videoId,
+                            commentVideoOwnerId
+                        );
+                    }
+                );
+
+                body.appendChild(
+                    deleteButton
+                );
+            }
+
 
             item.appendChild(
                 avatar
@@ -4654,6 +4469,62 @@ async function loadComments(
 
     list.scrollTop =
         list.scrollHeight;
+}
+
+
+async function deleteComment(
+    comment,
+    videoId,
+    videoOwnerId
+){
+
+    if(!currentUser){
+        return;
+    }
+
+    const allowed =
+        currentUser.id === comment.user_id ||
+        currentUser.id === videoOwnerId;
+
+    if(!allowed){
+
+        showToast(
+            "Você não pode excluir este comentário."
+        );
+
+        return;
+    }
+
+    if(!window.confirm("Excluir este comentário?")){
+        return;
+    }
+
+    const {error} =
+        await supabaseClient
+        .from("comments")
+        .delete()
+        .eq("id",comment.id);
+
+    if(error){
+
+        console.error(error);
+
+        showToast(
+            "Não foi possível excluir: " +
+            error.message
+        );
+
+        return;
+    }
+
+    await loadComments(videoId);
+
+    updateVideoCommentCount(
+        videoId,
+        -1
+    );
+
+    showToast("Comentário excluído.");
 }
 
 
@@ -5140,11 +5011,352 @@ async function openPublicProfile(
             followers || 0;
 
 
+    activePublicProfileId = userId;
+
+    const followButton =
+        document.getElementById("publicFollowButton");
+
+    if(followButton){
+
+        if(currentUser && currentUser.id === userId){
+
+            followButton.classList.add("hidden");
+
+        }else{
+
+            followButton.classList.remove("hidden");
+
+            if(currentUser){
+                await refreshPublicFollowState();
+            }else{
+                followButton.textContent = "Seguir";
+                followButton.classList.remove("following");
+            }
+        }
+    }
+
     renderChannelGrid(
         "publicChannelGrid",
         publicChannelVideos,
         profile
     );
+}
+
+
+/* =========================================================
+   SEGUIR / COMPARTILHAR / SEGUINDO
+========================================================= */
+
+async function refreshPublicFollowState(){
+
+    const button =
+        document.getElementById("publicFollowButton");
+
+    if(!button || !activePublicProfileId || !currentUser){
+        return;
+    }
+
+    const {data,error} =
+        await supabaseClient
+        .from("follows")
+        .select("id")
+        .eq("follower_id",currentUser.id)
+        .eq("following_id",activePublicProfileId)
+        .maybeSingle();
+
+    if(error){
+        console.error(error);
+        return;
+    }
+
+    const following = !!data;
+
+    button.textContent =
+        following ? "Seguindo" : "Seguir";
+
+    button.classList.toggle(
+        "following",
+        following
+    );
+}
+
+async function togglePublicFollow(){
+
+    if(!currentUser){
+
+        showToast("Entre na conta para seguir pessoas.");
+        showScreen("authScreen");
+        showLogin();
+        return;
+    }
+
+    if(
+        !activePublicProfileId ||
+        activePublicProfileId === currentUser.id
+    ){
+        return;
+    }
+
+    const button =
+        document.getElementById("publicFollowButton");
+
+    button.disabled = true;
+
+    const {data:existing,error:checkError} =
+        await supabaseClient
+        .from("follows")
+        .select("id")
+        .eq("follower_id",currentUser.id)
+        .eq("following_id",activePublicProfileId)
+        .maybeSingle();
+
+    if(checkError){
+
+        console.error(checkError);
+        showToast("Erro ao verificar seguimento.");
+        button.disabled = false;
+        return;
+    }
+
+    if(existing){
+
+        const {error} =
+            await supabaseClient
+            .from("follows")
+            .delete()
+            .eq("id",existing.id);
+
+        if(error){
+            showToast(error.message);
+        }else{
+            showToast("Você deixou de seguir.");
+        }
+
+    }else{
+
+        const {error} =
+            await supabaseClient
+            .from("follows")
+            .insert({
+                follower_id:currentUser.id,
+                following_id:activePublicProfileId
+            });
+
+        if(error){
+            showToast(error.message);
+        }else{
+            showToast("Você começou a seguir.");
+        }
+    }
+
+    button.disabled = false;
+
+    await refreshPublicFollowState();
+
+    const {count} =
+        await supabaseClient
+        .from("follows")
+        .select("*",{count:"exact",head:true})
+        .eq("following_id",activePublicProfileId);
+
+    document.getElementById(
+        "publicProfileFollowers"
+    ).textContent =
+        count || 0;
+}
+
+
+async function shareVideo(video){
+
+    const url =
+        new URL(window.location.href);
+
+    url.searchParams.set(
+        "video",
+        video.id
+    );
+
+    const shareData = {
+        title:video.title || "Vídeo no Jvideos",
+        text:"Confira este vídeo no Jvideos.",
+        url:url.href
+    };
+
+    try{
+
+        if(
+            navigator.share &&
+            typeof navigator.share === "function"
+        ){
+
+            await navigator.share(shareData);
+            return;
+        }
+
+        if(navigator.clipboard){
+
+            await navigator.clipboard.writeText(
+                url.href
+            );
+
+            showToast("Link do vídeo copiado!");
+            return;
+        }
+
+    }catch(error){
+
+        if(error?.name === "AbortError"){
+            return;
+        }
+
+        console.error(error);
+    }
+
+    showToast("Não foi possível compartilhar o link.");
+}
+
+
+async function openFollowing(){
+
+    if(!currentUser){
+
+        showScreen("authScreen");
+        showLogin();
+        showToast("Entre na conta para ver quem você segue.");
+        return;
+    }
+
+    showScreen("followingScreen");
+    await loadFollowingFeed();
+}
+
+async function loadFollowingFeed(){
+
+    const container =
+        document.getElementById("followingFeed");
+
+    container.innerHTML = `
+        <div class="following-empty">
+            Carregando vídeos...
+        </div>
+    `;
+
+    const {
+        data:follows,
+        error:followsError
+    } =
+        await supabaseClient
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id",currentUser.id);
+
+    if(followsError){
+
+        console.error(followsError);
+
+        container.innerHTML = `
+            <div class="following-empty">
+                Não foi possível carregar a aba Seguindo.
+            </div>
+        `;
+
+        return;
+    }
+
+    const ids =
+        (follows || [])
+        .map(item=>item.following_id)
+        .filter(Boolean);
+
+    if(ids.length === 0){
+
+        container.innerHTML = `
+            <div class="following-empty">
+                Você ainda não segue ninguém.<br>
+                Entre em um perfil e toque em <strong>Seguir</strong>.
+            </div>
+        `;
+
+        return;
+    }
+
+    const {
+        data,
+        error
+    } =
+        await supabaseClient
+        .from("videos")
+        .select(`
+            id,
+            user_id,
+            title,
+            description,
+            video_url,
+            thumbnail_url,
+            duration,
+            views,
+            likes_count,
+            comments_count,
+            status,
+            created_at,
+            profile:profiles!videos_user_id_fkey(
+                id,
+                username,
+                display_name,
+                avatar_url
+            )
+        `)
+        .in("user_id",ids)
+        .eq("status","published")
+        .order("created_at",{ascending:false});
+
+    if(error){
+
+        console.error(error);
+
+        container.innerHTML = `
+            <div class="following-empty">
+                Não foi possível carregar os vídeos.
+            </div>
+        `;
+
+        return;
+    }
+
+    renderFollowingFeed(data || []);
+}
+
+function renderFollowingFeed(videos){
+
+    const container =
+        document.getElementById("followingFeed");
+
+    container.innerHTML = "";
+
+    if(!videos.length){
+
+        container.innerHTML = `
+            <div class="following-empty">
+                As pessoas que você segue ainda não publicaram vídeos.
+            </div>
+        `;
+
+        return;
+    }
+
+    videos.forEach(video=>{
+        container.appendChild(
+            createVideoCard(video)
+        );
+    });
+
+    container.querySelectorAll(".video-card")
+        .forEach(card=>{
+            card.style.minHeight = "650px";
+            card.style.height = "650px";
+        });
+
+    setupVideoObserver(container);
 }
 
 
@@ -6761,8 +6973,14 @@ function openVideoInFeed(videoId){
             card.scrollIntoView({behavior:"auto", block:"start"});
             const video = card.querySelector("video");
             if(video){
-                video.muted = true;
-                video.play().catch(()=>{});
+                audioUnlocked = true;
+                video.muted = false;
+                video.volume = 1;
+
+                video.play().catch(()=>{
+                    video.muted = true;
+                    video.play().catch(()=>{});
+                });
             }
         }
     };
@@ -7676,6 +7894,22 @@ async function initialize(){
 
 
     await loadFeed();
+
+    /*
+      Se o usuário abriu um link compartilhado com ?video=ID,
+      abrimos o vídeo correspondente no feed.
+    */
+    const sharedVideoId =
+        new URLSearchParams(
+            window.location.search
+        ).get("video");
+
+    if(sharedVideoId){
+
+        setTimeout(()=>{
+            openVideoInFeed(sharedVideoId);
+        },100);
+    }
 }
 
 
